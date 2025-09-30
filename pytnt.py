@@ -15,9 +15,6 @@ import json
 import time
 from datetime import timedelta
 
-reserved_prefixes = [ip_network('0.0.0.0/8'), ip_network('10.0.0.0/8'), ip_network('100.64.0.0/10'), ip_network('127.0.0.0/8'), ip_network('169.254.0.0/16'), ip_network('172.16.0.0/12'), ip_network('192.0.0.0/24'), ip_network('192.0.2.0/24'), ip_network('192.88.99.0/24'), ip_network('192.168.0.0/16'), ip_network('198.18.0.0/15'), ip_network('198.51.100.0/24'), ip_network('203.0.113.0/24'), ip_network('224.0.0.0/4'), ip_network('233.252.0.0/24'), ip_network('240.0.0.0/4'), ip_network('255.255.255.255/32')]
-
-
 tunnels = {}
 
 class IngressStatus(Enum):
@@ -168,35 +165,7 @@ class Tunnel:
                 if a.src == l.src:
                     continue
             return
-        # lsrs.reverse()
-        
-        # lsrs.reverse()
-        # lsps = []
-
-        # lf = -1
-        # while len(self._lsp)>lf:
-        #     lf = len(self._lsp)
-
-        #     rest2 = []
-        #     for r in lsrs:
-                
-        # srcs = [lsr.src if lsr is not None else None for lsr in self._lsp]
-        # to_add = [lsr.src if lsr is not None else None for lsr in lsrs]
-        # to_add.reverse()
-
-        # first = set(srcs)
-        # lsp = []
-        # lf = -1
-        # while len(first) > lf:
-        #     lf = len(first)
-        #     rest2 = []
-        #     for a in to_add:
-        #         if len(first.intersection(set(to_add)))>0:
-        #             first |= set(to_add)
-        #         else:
-        #             rest2.append()
-
-
+    
         #avoid adding duplicate lsr sequences to the tunnel
         for hop in lsrs:
             srcs = [lsr.src if lsr is not None else None for lsr in self._lsp]
@@ -279,11 +248,6 @@ class TntHop:
         self._iteration = 0
         self._ping_rttl = None
         self._trace = trace
-
-    # def __eq__(self,other):
-    #     if not isinstance(other,TntHop):
-    #         return False
-        
 
     def __str__(self):
         line = f"{self.src:<15} {(self.rtt.total_seconds()*1000):.3f} ms"
@@ -559,12 +523,6 @@ class TntHop:
         else:
             self.set_type(TntHopType.EXP)
 
-        # if mttl > 1 or mttl < 255:
-        #     self.set_type(TntHopType.EXP)
-        # else:
-        #     print('Found OPA!')
-        #     self.set_type(TntHopType.OPA)
-
         # identify ingress
         if prev is not None and not prev.is_intern():
             if prev.is_egr() and not prev.is_juniper_imp():
@@ -690,9 +648,6 @@ class TntTrace:
     def userid(self):
         return self._userid
     
-    # def set_userid(self, u):
-    #     self.userid
-
     # get the hop for a given TTL
     def hop(self, i):
         if i < 0 or i >= len(self._hops):
@@ -737,9 +692,6 @@ class TntTrace:
                     prev_hop.clear_type_lsr()
                     prev_hop.set_type(TntHopType.EGR)
                 continue
-
-            # if str(self.dst) == '167.124.77.124' and str(hop.src) == '168.209.160.109':
-            #     print(hop.is_ttl_exp())
 
             if hop.is_ttl_exp():
                 if hop.icmpext is not None:
@@ -897,8 +849,7 @@ class TntTrace:
 
         # check if BRPR or DPR step
         nlsrs = len(lsrs)
-        # if str(self.dst) == '62.253.218.63':
-        #     print(f'found {nlsrs} lsrs')
+
         if nlsrs == 1:
             tunt._rev_mode = RevMode.BRPR
         elif nlsrs > 2:
@@ -909,18 +860,12 @@ class TntTrace:
                lsrs[0].src == lsrs[1].src):
                 tunt._rev_mode = RevMode.BRPR
 
-        # if str(self.dst) == '62.253.218.63':
-        #     print(f'tunnel start: {tunt._start_addr}, tunnel end: {tunt._next_addr}')
-
         tun = Tunnel(tunt._start_addr, tunt._next_addr)
         if tun not in tunnels:
             tunnels[tun] = tun
         else:
             tun = tunnels[tun]
         tun.add(lsrs)
-        # if str(tunt._start_addr) == '212.187.174.237' and str(tunt._next_addr) == '171.75.9.213':
-        #     print(f'added {nlsrs} to tunnel, new length: {len(tun)}')
-        
 
         # Update ingress/egress/LH MPLS flags
         for j in range(self.firsthop-1, self.hop_count):
@@ -948,6 +893,86 @@ class TntTrace:
 
         return
 
+    def check_uturn(self):
+
+        if self.hop_count - self.firsthop < 2:
+            return
+        UTURN_THRESHOLD = 3
+        usum = 0
+        next_egress_status = False
+
+        for i in range(self.firsthop-1, self.hop_count):
+            hop = self.hop(i)
+            if hop is None:
+                uturn = 0
+                rtla = 0
+            else:
+                uturn = hop.uturn()
+                rtla = hop.rtla()
+            absuturn = abs(uturn)
+            
+
+            if next_egress_status:
+                # print(f'Setting egress at hop {hop.src}')
+                if hop is not None and not (hop.is_intern() or hop.is_rev()):
+                    # check for duplicate IP
+
+                    tmp_hop = self.hop(i-1)
+
+                    if tmp_hop is not None and (tmp_hop.src == self.src):
+                        
+                        if hop.is_ingr():
+                            hop.clear_type_lsr()
+                        hop.set_type(TntHopType.INTERN)
+                        hop.set_type(TntHopType.IMP_UT)
+                        continue
+                    
+                    if (absuturn < UTURN_THRESHOLD or rtla == uturn) and (not hop.is_ingr() or not hop.is_juniper_imp()):
+                        
+                        hop.set_type(TntHopType.EGR)
+                        hop.set_type(TntHopType.IMP_UT)
+
+                next_egress_status = False
+            
+            if uturn == 0 or rtla == uturn or i == self.hop_count - 1 or (hop.is_intern() or hop.is_rev()) or (hop.is_opa() and hop.is_egr()):
+                if usum >= UTURN_THRESHOLD:
+                    
+                    if hop is None or (not (hop.is_opa() and hop.is_egr()) and not (hop.is_intern() or hop.is_rev())):
+                        # print(f'Setting next egress status at hop {hop.src}')
+                        next_egress_status = True
+                    if hop is not None and not (hop.is_intern() or hop.is_rev()) and not (hop.is_opa() and hop.is_egr()):
+                        if hop.is_ingr() or hop.is_egr():
+                            hop.clear_type_lsr()
+                        hop.set_type(TntHopType.IMP_UT)
+                        if hop.src == self.dst:
+                            hop.set_type(TntHopType.EGR)
+                        else:
+                            hop.set_type(TntHopType.INTERN)
+                    
+                    for j in range(i-1,self.firsthop-1,-1):
+                        tmp_hop = self.hop(j)
+                        if tmp_hop is None or (tmp_hop.is_intern() or tmp_hop.is_rev()):
+                            break
+                        tmp_uturn = tmp_hop.uturn()
+                        tmp_rtla = tmp_hop.rtla()
+                        if tmp_uturn == 0 or tmp_rtla == tmp_uturn:
+                            if not tmp_hop.is_egr() or (tmp_hop.is_opa() and tmp_hop.is_egr()) or not tmp_hop.is_juniper_imp():
+                                tmp_hop.set_type(TntHopType.INGR)
+                                tmp_hop.set_type(TntHopType.IMP_UT)
+                            break
+                        if tmp_hop.is_ingr() or tmp_hop.is_egr():
+                            tmp_hop.clear_type_lsr()
+                        tmp_hop.set_type(TntHopType.INTERN)
+                        tmp_hop.set_type(TntHopType.IMP_UT)
+        
+                elif i == self.hop_count - 1 and absuturn >= UTURN_THRESHOLD and rtla != uturn and self.dst != hop.src and not hop.is_intern():
+                    hop.clear_type_lsr()
+                    hop.set_type(TntHopType.INTERN)
+                    hop.set_type(TntHopType.IMP_UT)
+                usum = 0
+                continue
+            usum += absuturn
+
 class TntTests:
     def __init__(self):
         self._tests = {}
@@ -970,13 +995,8 @@ class TntTests:
     def __len__(self):
         return len(self._tests)
 
-@staticmethod
-def is_reserved(addr):
-    ip = ip_address(addr)
-    for pref in reserved_prefixes:
-        if ip in pref:
-            return True
-    return False
+
+
 
 def dump_trace(trace):
     txt = "trace [icmp-paris] from " + trace['src'] + " to " + str(trace['dst']) + "\n"
@@ -989,10 +1009,8 @@ def dump_trace(trace):
         return
     
     for hop in trace['hops']:
-        # hop = self.hop(i)
-        # next_hop = self.hop(i+1)
+
         probe_ttl = hop['probe_ttl']
-        # print(f'Probe TTL: {probe_ttl}, curr: {curr}')
         hop_types_mflag = hop['hop_types_mflags']
         hop_fail_mflags = hop['hop_fail_mflags']
         hop_disc_mflags = hop['hop_disc_mflags']
@@ -1000,26 +1018,25 @@ def dump_trace(trace):
 
         #Fill in missing hops
         for i in range(curr,probe_ttl):
-            # print(i)
+            
             if inv == 0:
                 txt += (f"{i:3} *\n")
                 if prev_found:
                     inv+=1
                     prev_found = False
             else:
-                
-                # txt += (f"H{inv:3} *\n")
+              
                 txt += ("%3s *\n" % (f"H{inv}"))
                 inv += 1
                 total_inv += 1
             curr += 1
             total += 1
-        # print(f'Probe TTL: {probe_ttl}, curr: {curr}')
+        
         if hop_disc_mflags & 0x0100:
             if inv == 0:
                 inv += 1
             
-            # line = f"H{inv:3} "
+            
             line = ("%3s " % (f"H{inv}"))
             inv += 1
             total_inv += 1
@@ -1033,12 +1050,12 @@ def dump_trace(trace):
             line = f"{probe_ttl:3} "
         curr += 1
         total += 1
-        # print(f'Probe TTL: {probe_ttl}, curr: {curr}')
+        
         
         line += f"{hop['addr']:<15} {float(hop['rtt']):.3f} ms"
         hop_reply_ttl = hop['reply_ttl']
         ping_ttl = hop['hop_ping_rttl']
-        if is_reserved(hop['addr']):
+        if ScamperAddr(hop['addr']).is_reserved():
             line += " rsvd rTTLs=<" + str(hop_reply_ttl) + ",*>"
         else:
             if ping_ttl == 0:
@@ -1098,9 +1115,6 @@ def dump_trace(trace):
                 if hop_disc_mflags & 0x0008:
                     line += ",MTTL"
                 
-
-
-            # line += ",INF" if hop_types_mflag & 0xf8 and hop_types_mflag & 0x04
             if ((hop_types_mflag & 0xf8) == 0) and (hop_types_mflag & 0x04):
                 line += ",INF"
             else:
@@ -1123,7 +1137,7 @@ def dump_trace(trace):
 
         if "icmpext" in hop:
             ie = hop['icmpext'][0]
-            # print(ie)
+
             if 'mpls_labels' in ie:
                 labels = ie['mpls_labels']
                 mc = len(labels)
@@ -1145,13 +1159,9 @@ def dump_trace(trace):
 def run_initial_traces(addresses,tnts,pings,queue,ctrl,out):
     traces = []
     for i in range(len(addresses)):
-
-        ### START OPT
-
         ctrl.do_trace(addresses[i], wait_timeout=1, attempts=2,
-                          userid=i, sync=False)
-    print('Waiting for traces')    
-    # queue = []
+                          userid=i, sync=False) 
+    
     for o in ctrl.responses():
         out.write(o)
         trace = TntTrace(o)
@@ -1177,17 +1187,10 @@ def find_next_traces(traces):
         # a series of subsequent pings and traceroutes
         trace.identify(to_trace)
         #associate traces with original trace
-        # for t in to_trace:
-        #     dst = t.dst
-        #     if dst in testmap:
-        #         testmap[dst].append(i)
-        #     else:
-        #         testmap[dst] = [i]
-        # print(f'Trace userid: {trace.userid} with destination {trace.dst} sending {len(to_trace)} traces: ')
+        
         for test in to_trace:
             assert test.userid == trace.userid
-            # print(f'\ttest dst: {test.dst}')
-        # print(to_trace)
+         
         for t in to_trace:
             if t not in queue:
                 queue.append(t)
@@ -1212,12 +1215,10 @@ def run_extra_traces(queue,ctrl,out,testmap,traces,pings):
 
 
 def _feedme(ctrl, inst, vps):
-#   print(f'inst: {inst.shortname}, # tests: {len(vps[inst])}')
   if len(vps[inst]) == 0:
     inst.done()
   else:
     test = vps[inst].pop(0)
-    # print('Sending')
     if test.method == 'trace':
         ctrl.do_trace(test.dst, firsthop=test.start_ttl, wait_timeout=1,wait_probe=timedelta(milliseconds=50),
                           userid=test.userid, attempts=3,method='icmp-paris',inst=inst)
@@ -1240,26 +1241,16 @@ def main() -> int:
     group1.add_argument('-p', '--port', help='Local Scamper port')
     parser.add_argument('-o','--out',default='tnt.warts')
     parser.add_argument('-s','--seed')
-    # parser.add_argument('-n','--noprobe',action='store_true')
+
     args = parser.parse_args()
 
-    # if len(sys.argv) != 3:
-    #     print("usage: tnt.py $socket $ip")
-    #     return -1
-
-
     try:
-        # if args.unix is not None:
-        #     statinfo = os.stat(args.unix)
-        #     if stat.S_ISSOCK(statinfo.st_mode):
-        #         ctrl = ScamperCtrl(unix=args.unix)
-        #         out = ScamperFile(args.out, 'w')
-        #         inf = None
+       
         if args.mux is not None:
             statinfo = os.stat(args.mux)
             if stat.S_ISSOCK(statinfo.st_mode):
                 mux = args.mux
-                # ctrl.add_vps(ctrl.vps())
+               
                 inf = None
             else:
                 print('Error: provided MUX is not a socket')
@@ -1379,16 +1370,13 @@ def main() -> int:
             if vp not in queuemap:
                 queuemap[vp] = []
             queuemap[vp].extend(queue)
-            
-            # feedmap[instmap[vp]].extend(queue)
-            # process_queue(queue,ctrl,instmap[vp])
         feedmap = {}
         ctrl = ScamperCtrl(mux=args.mux,morecb=_feedme,param=feedmap)
         ctrl.add_vps(ctrl.vps())
         instmap = {}
         instances = ctrl.instances()
         for inst in instances:
-            #print(inst.shortname)
+            
             instmap[inst.shortname] = inst
             if inst.shortname in queuemap:
                 feedmap[inst] = queuemap[inst.shortname]
@@ -1406,7 +1394,6 @@ def main() -> int:
             try:
                 o=ctrl.poll(timeout=timedelta(seconds=10))
             except Exception as e:
-                # print(f'Caught Exception: {e}')
                 continue
                 
             if o is None:
@@ -1459,8 +1446,6 @@ def main() -> int:
             try:
                 o=ctrl.poll(timeout=timedelta(seconds=30))
             except Exception as e:
-                # print(f'Caught Exception: {e}')
-                # print(e.with_traceback())
                 continue
                 
             if o is None:
@@ -1490,6 +1475,11 @@ def main() -> int:
         for vp in outmap:
             outmap[vp].close()
         outmap = {}
+
+        for trace in tnts.tests():
+            if trace == None:
+                continue
+            trace.check_uturn()
                     
 
         for t in tnts.tests():
@@ -1501,6 +1491,8 @@ def main() -> int:
 
         for vp in outmap:
             outmap[vp].close()
+
+        
         
     else:
         # do the initial traceroute
@@ -1515,42 +1507,6 @@ def main() -> int:
         init_time = time.perf_counter()
         for i in range(len(addresses)):
 
-            # queue = []
-            # o = ctrl.do_trace(addresses[i], wait_timeout=1, attempts=2,
-            #                 userid=i, sync=True)
-            # out.write(o)
-            # trace = TntTrace(o)
-            # tnts.add(trace)
-            # process_hops_pings(trace.hops, pings, queue)
-
-            # # figure out the unique addresses to send followup pings to
-            # process_queue(queue, ctrl)
-            # for o in ctrl.responses():
-            #     out.write(o)
-            #     pings.process(o)
-            #     for hop in pings.blocked(o.dst):
-            #         hop.process_ping(pings.get_rttl(o.dst))
-
-            # # once we have all the pings, infer tunnels, which can cause
-            # # a series of subsequent pings and traceroutes
-            # trace.identify(queue)
-            # process_queue(queue, ctrl)
-
-            # for o in ctrl.responses():
-            #     out.write(o)
-            #     if isinstance(o, ScamperTrace):
-            #         print('EXTRA TRACE: ')
-            #         print(str(TntTrace(o)))
-            #         print('------------------------')
-            #         trace.process_trace(o, pings, queue)
-            #         process_queue(queue, ctrl)
-            #     elif isinstance(o, ScamperPing):
-            #         pings.process(o)
-            #         for hop in pings.blocked(o.dst):
-            #             hop.process_ping(pings.get_rttl(o.dst))
-
-        ### START OPT
-
             ctrl.do_trace(addresses[i], wait_timeout=1, attempts=2,
                           userid=i, sync=False)
         print('Waiting for traces')    
@@ -1562,19 +1518,13 @@ def main() -> int:
             tnts.add(trace)
             process_hops_pings(trace.hops, pings, queue)
             traces.append(trace)
-        # queue = []
-        # traces = run_initial_traces(addresses,tnts,pings,queue,ctrl,out)
+       
 
         second_time = time.perf_counter()
         print(f'{len(traces)} Initial traceroutes conducted in {int(second_time-init_time)} seconds')
 
         print(f'Conducting {len(queue)} pings')
-        # process_queue(queue, ctrl)
-        # for o in ctrl.responses():
-        #     out.write(o)
-        #     pings.process(o)
-        #     for hop in pings.blocked(o.dst):
-        #         hop.process_ping(pings.get_rttl(o.dst))
+       
         run_pings(pings,queue, ctrl, out)
 
         third_time = time.perf_counter()
@@ -1582,117 +1532,27 @@ def main() -> int:
 
         queue = []
         testmap = {}
-        # for i in range(len(traces)):
-        #     trace = traces[i]
-        #     to_trace = []
-        #     # once we have all the pings, infer tunnels, which can cause
-        #     # a series of subsequent pings and traceroutes
-        #     trace.identify(to_trace)
-        #     #associate traces with original trace
-        #     for t in to_trace:
-        #         dst = t.dst
-        #         if dst in testmap:
-        #             testmap[dst].append(i)
-        #         else:
-        #             testmap[dst] = [i]
-        #     for t in to_trace:
-        #         if t not in queue:
-        #             queue.append(t)
-        #     queue.extend(to_trace)
+       
         queue = find_next_traces(traces,testmap)
         print(f'Conducting {len(queue)} additional traceroutes')
         process_queue(queue, ctrl)
 
-        # for o in ctrl.responses():
-        #     out.write(o)
-        #     if isinstance(o, ScamperTrace):
-        #         #Get trace from trace destination
-        #         idx = testmap[o.dst]
-        #         for i in idx:
-        #             trace = traces[i]
-        #             trace.process_trace(o, pings, queue)
-        #             process_queue(queue, ctrl)
-        #     elif isinstance(o, ScamperPing):
-        #         pings.process(o)
-        #         for hop in pings.blocked(o.dst):
-        #             hop.process_ping(pings.get_rttl(o.dst))
+        
         run_extra_traces(queue,ctrl,out,testmap,traces,pings)
 
         fourth_time = time.perf_counter()
         print(f'Followup probing conducted in {int(fourth_time-third_time)} seconds')
-
-
-        ### END OPT
-
-
-
-        # init_time = time.perf_counter()
-
-        # initial_traces = []
-        # for i in range(len(addresses)):
-        #     ctrl.do_trace(addresses[i], wait_timeout=1, attempts=2,
-        #                     userid=i, sync=False,method='icmp-paris')
-
-        # # for o in ctrl.responses():
-        # #     initial_traces.append(TntTrace(o))
-
-        # npings = 0
-        # for o in ctrl.responses():
-        #     queue = []
-        #     out.write(o)
-        #     if isinstance(o,ScamperTrace):
-        #         trace = TntTrace(o)
-        #         tnts.add(trace)
-        #         process_hops_pings(trace.hops, pings, queue)
-        #         process_queue(queue, ctrl)
-        #         initial_traces.append(TntTrace(o))
-        #     elif isinstance(o,ScamperPing):
-        #         pings.process(o)
-        #         npings += 1
-        #         for hop in pings.blocked(o.dst):
-        #             hop.process_ping(pings.get_rttl(o.dst))
-
-        # second_time = time.perf_counter()
-        # print(f'Ran initial traceroutes in {second_time-init_time} seconds')
-        # print(f'Have {len(initial_traces)} traces to check, processed {npings} pings')
         
-        # for trace in initial_traces:
-        #     queue = []
-        #     # o = ctrl.do_trace(addresses[i], wait_timeout=1, attempts=2,
-        #     #                 userid=i, sync=True,method='icmp-paris')
-        #     # out.write(o)
-        #     # trace = TntTrace(o)
-        #     # tnts.add(trace)
-        #     # process_hops_pings(trace.hops, pings, queue)
-
-        #     # # figure out the unique addresses to send followup pings to
-        #     # process_queue(queue, ctrl)
-        #     # for o in ctrl.responses():
-        #     #     out.write(o)
-        #     #     pings.process(o)
-        #     #     for hop in pings.blocked(o.dst):
-        #     #         hop.process_ping(pings.get_rttl(o.dst))
-
-        #     # once we have all the pings, infer tunnels, which can cause
-        #     # a series of subsequent pings and traceroutes
-        #     print(trace.can_identify())
-        #     trace.identify(queue)
-        #     process_queue(queue, ctrl)
-
-        #     for o in ctrl.responses():
-        #         out.write(o)
-        #         if isinstance(o, ScamperTrace):
-        #             trace.process_trace(o, pings, queue)
-        #             process_queue(queue, ctrl)
-        #         elif isinstance(o, ScamperPing):
-        #             pings.process(o)
-        #             for hop in pings.blocked(o.dst):
-        #                 hop.process_ping(pings.get_rttl(o.dst))
         out.close()
+
+        for trace in traces:
+            if trace == None:
+                continue
+            trace.check_uturn()
         
-    # print(f'Identified {len(tnts)} traces')
-    # for trace in tnts.tests():
-    #    print(str(trace))
+    
+
+    
 
     return 0
 
