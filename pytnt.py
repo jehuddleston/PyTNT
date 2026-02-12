@@ -29,6 +29,8 @@ import logging
 import bz2
 import io
 from collections.abc import Sequence
+import cProfile
+
 
 tunnels = {}  # type: dict['Tunnel', 'Tunnel']
 
@@ -96,7 +98,7 @@ def ittl(ttl: int) -> int:
 
 def process_queue(
     queue: deque["Test"],
-    ctrl: ScamperCtrl["dict[ScamperInst, deque[Test]]"],
+    ctrl: ScamperCtrl,
     instmap: dict[str, ScamperInst],
 ) -> None:
     while len(queue) > 0:
@@ -129,7 +131,7 @@ def process_queue(
 
 
 def process_hops_pings(
-    hops: list[Optional["TntHop"]],
+    hops: Iterator[Optional["TntHop"]],
     pings: "PingTests",
     queue: deque["Test"],
     probed: set[ScamperAddr] = set(),
@@ -246,12 +248,12 @@ class Tunnel:
         # avoid adding duplicate lsr sequences to the tunnel
         for hop in lsrs:
             srcs = [lsr.src if lsr is not None else None for lsr in self._lsp]
-            to_add = [lsr.src if lsr is not None else None for lsr in lsrs]
-            to_add.reverse()
+            src_add = [lsr.src if lsr is not None else None for lsr in lsrs]
+            src_add.reverse()
 
             in_tun = False
-            for idx in range(len(srcs) - len(to_add) + 1):
-                if srcs[idx : idx + len(to_add)] == to_add:
+            for idx in range(len(srcs) - len(src_add) + 1):
+                if srcs[idx : idx + len(src_add)] == src_add:
                     in_tun = True
                     break
 
@@ -672,7 +674,7 @@ class TntHop:
         # XXX: buddy_status
 
     # triggers 1/2
-    def process_mplsext(self, prev: "TntHop"|None) -> None:
+    def process_mplsext(self, prev: 'TntHop|None') -> None:
         # flag as MPLS hop
         self.set_type(TntHopType.INTERN)
 
@@ -865,8 +867,8 @@ class TntTrace:
 
     # return observed hops
     @property
-    def hops(self) -> list[TntHop | None]:
-        return self._hops
+    def hops(self) -> Iterator[TntHop | None]:
+        return self._hops.__iter__()
 
     @property
     def vp(self) -> str:
@@ -1145,7 +1147,7 @@ class TntTrace:
                 tnthop.mpls_flags_set(tunt)
 
         # schedule pings to the hops that are part of this LSP
-        process_hops_pings(lsrs, pings, queue, vp=self.vp)
+        process_hops_pings(lsrs.__iter__(), pings, queue, vp=self.vp)
 
         return
 
@@ -1789,4 +1791,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    cProfile.run('main()',filename='pytnt-profile.prof')
