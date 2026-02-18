@@ -1728,11 +1728,11 @@ def main() -> int:
         else:
             logger.error("No valid inputs given, exiting")
             return -1
-
+        nbase = len([trace for trace in traces if trace is not None])
         while not ctrl.is_done():
             print(
                 "",
-                end=f"\rReceived {tracecount} traces ({len([trace for trace in traces if trace is not None])} base) and {pingcount} pings",
+                end=f"\rReceived {tracecount} traces ({nbase} base) and {pingcount} pings",
             )
             o = None
             try:
@@ -1791,4 +1791,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    cProfile.run('main()',filename='pytnt-profile.prof')
+    main()
