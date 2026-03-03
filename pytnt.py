@@ -34,11 +34,6 @@ import cProfile
 
 tunnels = {}  # type: dict['Tunnel', 'Tunnel']
 
-
-TUNNEL_LIFETIME = 604800
-PING_LIFETIME = 604800
-
-
 class IngressStatus(Enum):
     NULL = 0
     START = 1
@@ -114,19 +109,20 @@ def process_queue(
                 test.dst,
                 firsthop=test.start_ttl,
                 userid=test.userid,
-                attempts=2,
+                attempts=1,
                 method="icmp-paris",
                 inst=inst,
                 sync=False,
+                wait_timeout=1,
+                squeries=5
             )
         elif test.method == "ping":
             ctrl.do_ping(
                 test.dst,
                 sync=False,
                 inst=inst,
-                attempts=2,
-                wait_timeout=0.5,
-                wait_probe=0.01,
+                attempts=1,
+                wait_timeout=1
             )
 
 
@@ -1470,19 +1466,20 @@ def _feedme(ctrl, inst: ScamperInst, vps: dict[ScamperInst, deque]):
             test.dst,
             firsthop=test.start_ttl,
             userid=test.userid,
-            attempts=2,
+            attempts=1,
             method="icmp-paris",
             inst=inst,
             sync=False,
+            wait_timeout=1,
+            squeries=5
         )
     elif test.method == "ping":
         ctrl.do_ping(
             test.dst,
             sync=False,
             inst=inst,
-            attempts=2,
-            wait_timeout=0.5,
-            wait_probe=0.01,
+            attempts=1,
+            wait_timeout=1,
         )
 
 
