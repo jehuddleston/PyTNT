@@ -339,20 +339,22 @@ class TntHop:
         if not self._hop:
             return "*"
 
+        lines = []
+
         rtt_seconds = self.rtt.total_seconds() if self.rtt is not None else 0
-        line = f"{self.src:<15} {(rtt_seconds * 1000):.3f} ms"
+        lines.append(f"{self.src:<15} {(rtt_seconds * 1000):.3f} ms")
         hop_reply_ttl = str(self.reply_ttl)
         if isinstance(self.src, ScamperAddr) and self.src.is_reserved():
-            line += " rsvd rTTLs=<" + hop_reply_ttl + ",*>"
+            lines.append(" rsvd rTTLs=<" + hop_reply_ttl + ",*>")
         else:
             if self._ping_rttl is None:
-                line += " rTTLs=<" + hop_reply_ttl + ",*>"
+                lines.append(" rTTLs=<" + hop_reply_ttl + ",*>")
             else:
                 rttl = self._ping_rttl
-                line += " rTTLs=<" + hop_reply_ttl + "," + str(rttl) + ">"
+                lines.append(" rTTLs=<" + hop_reply_ttl + "," + str(rttl) + ">")
 
         if self.is_ttl_exp():
-            line += (
+            lines.append(
                 " qttl="
                 + str(self.icmp_q_ttl)
                 + (
@@ -363,7 +365,7 @@ class TntHop:
             )
 
         if self.is_mpls():
-            line += " [MPLS" + (
+            lines.append( " [MPLS" + (
                 (",EXP" if self.is_exp() else "")
                 + (",OPA" if self.is_opa() else "")
                 + (",IMP" if self.is_imp() else "")
@@ -371,38 +373,38 @@ class TntHop:
                 + (",LSR" if self.is_intern() else "")
                 + (",EGR" if self.is_egr() else "")
                 + (",ING" if self.is_ingr() else "")
-            )
+            ))
 
             # trigger and signatures
-            line += self.disc_str()
+            lines.append(self.disc_str())
             if self.is_inferred():
-                line += ",INF"
+                lines.append(",INF")
             else:
                 # implicit signatures
-                line += (",QTTL" if self.is_imp_qt() else "") + (
+                lines.append((",QTTL" if self.is_imp_qt() else "") + (
                     ",UTURN" if self.is_imp_ut() else ""
-                )
+                ))
 
             # discovery method
             if self.is_rev():
                 if self.is_dpr():
-                    line += ",DPR"
+                    lines.append(",DPR")
                 elif self.is_brpr():
-                    line += ",BRPR"
-                line += f",step={self._iteration}"
+                    lines.append(",BRPR")
+                lines.append(f",step={self._iteration}")
 
-            line += "]"
+            lines.append("]")
 
         if self.mpls_count > 0 and isinstance(self.mplsext, ScamperIcmpExt):
             mttl = self.mplsext.mpls_ttl(0)
             mlabel = self.mplsext.mpls_label(0)
-            line += " Labels " + str(mlabel) + " mTTL=" + str(mttl)
+            lines.append(" Labels " + str(mlabel) + " mTTL=" + str(mttl))
             for j in range(1, self.mpls_count):
                 mttl = self.mplsext.mpls_ttl(j)
                 mlabel = self.mplsext.mpls_label(j)
-                line += " | " + str(mlabel) + " mTTL=" + str(mttl)
+                lines.append(" | " + str(mlabel) + " mTTL=" + str(mttl))
 
-        return line
+        return ''.join(lines)
 
     def process_ping(self, rttl: int | None, queue: deque[Test]) -> None:
         if rttl == None:
@@ -685,12 +687,6 @@ class TntHop:
                 else:
                     self.set_type(TntHopType.EXP)
 
-        # if mttl > 1 or mttl < 255:
-        #     self.set_type(TntHopType.EXP)
-        # else:
-        #     print('Found OPA!')
-        #     self.set_type(TntHopType.OPA)
-
         # identify ingress
         if prev is not None and not prev.is_intern():
             if prev.is_egr() and not prev.is_juniper_imp():
@@ -790,14 +786,15 @@ class TntTrace:
         #         self._hops[i] = TntHop(hop, self)
 
     def __str__(self):
-        txt = "trace from " + str(self.src) + " to " + str(self.dst) + "\n"
+        lines = []
+        lines.append("trace from " + str(self.src) + " to " + str(self.dst) + "\n")
         # txt = ""
         for i in range(self.firsthop - 1, self.hop_count):
             hop = self.hop(i)
             next_hop = self.hop(i + 1)
 
             # print out regular traceroute hop
-            txt += (f"{i + 1:3} ") + ("*" if hop is None else str(hop)) + "\n"
+            lines.append((f"{i + 1:3} ") + ("*" if hop is None else str(hop)) + "\n")
 
             # print out inferred tunnel hops if there are hops to print
             if hop is None or next_hop is None:
@@ -807,10 +804,10 @@ class TntTrace:
                 continue
             tun = tunnels[tun]
             for j, lsr in enumerate(tun._lsp):
-                txt += "%3s " % (f"H{j + 1}")
-                txt += ("*" if lsr is None else str(lsr)) + "\n"
-        txt += "\n"
-        return txt
+                lines.append("%3s " % (f"H{j + 1}"))
+                lines.append(("*" if lsr is None else str(lsr)) + "\n")
+        lines.append("\n")
+        return ''.join(lines)
 
     # get list of unique addresses observed in the traceroute
     def addrs(self) -> set[ScamperAddr]:
@@ -1165,7 +1162,6 @@ class TntTrace:
             absuturn = abs(uturn)
 
             if next_egress_status:
-                # print(f'Setting egress at hop {hop.src}')
                 if hop is not None and not (hop.is_intern() or hop.is_rev()):
                     # check for duplicate IP
 
@@ -1198,7 +1194,6 @@ class TntTrace:
                         not (hop.is_opa() and hop.is_egr())
                         and not (hop.is_intern() or hop.is_rev())
                     ):
-                        # print(f'Setting next egress status at hop {hop.src}')
                         next_egress_status = True
                     if (
                         hop is not None
@@ -1614,6 +1609,19 @@ def main() -> int:
         logger.info(f"Tunnels written to {outpath}")
         return 0
 
+
+    if len(args.pings) > 0:
+        n_init_pings = 0
+        logger.debug("Loading provided pings")
+        with open(args.pings,'r') as f:
+            for line in f:
+                # TODO verify files exist
+                with ScamperFile(line.strip(), 'r',filter_types=[ScamperPing]) as ping_inf:
+                    for p in ping_inf:
+                        pings.process(p)
+                        n_init_pings += 1
+        logger.debug(f"Loaded {n_init_pings} initial pings")
+
     vps = {}  # type: dict[ScamperInst, deque]
     ctr = 0
     ct = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1657,6 +1665,7 @@ def main() -> int:
             vps[inst] = deque()
 
         queue = deque()  # type: deque[Test]
+        nprobes = 0
         # Load initial traces
         if args.seed:
             t1 = time.perf_counter()
@@ -1667,7 +1676,7 @@ def main() -> int:
             logger.debug(f"Loading traces from {len(filelist)} files")
             for fname in filelist:
                 ctr += 1
-                print("", end=f"Loading traces from {ctr}/{len(filelist)} files\r")
+                # print("", end=f"Loading traces from {ctr}/{len(filelist)} files\r")
                 with ScamperFile(
                     fname, filter_types=[ScamperTrace, ScamperPing]
                 ) as inf:
@@ -1678,7 +1687,9 @@ def main() -> int:
                             process_hops_pings(
                                 t.hops, pings, queue, vp=t.vp, probed=probed
                             )
-
+                            if t.can_identify():
+                                t.identify(queue)
+                            nprobes += len(queue)
                         elif isinstance(o, ScamperPing):
                             pings.process(o)
                         while len(queue) > 0:
@@ -1691,7 +1702,7 @@ def main() -> int:
                             vps[inst].append(test)
             t2 = time.perf_counter()
             logger.debug(f"Loaded files in {t2 - t1} seconds")
-            logger.debug(f"Identified {len(queue)} pings")
+            logger.debug(f"Identified {nprobes} measurements")
             ctr = 0
 
         # Conduct iniital pings
@@ -1725,12 +1736,12 @@ def main() -> int:
         else:
             logger.error("No valid inputs given, exiting")
             return -1
-        nbase = len([trace for trace in traces if trace is not None])
+        # nbase = len([trace for trace in traces if trace is not None])
         while not ctrl.is_done():
-            print(
-                "",
-                end=f"\rReceived {tracecount} traces ({nbase} base) and {pingcount} pings",
-            )
+            # print(
+            #     "",
+            #     end=f"\rReceived {tracecount} traces ({nbase} base) and {pingcount} pings",
+            # )
             o = None
             try:
                 o = ctrl.poll(timeout=datetime.timedelta(seconds=args.timeout))
@@ -1774,15 +1785,15 @@ def main() -> int:
             continue
         trace.check_uturn()
     ctr = 0
-    outpath = os.path.join(args.outdir, f"found_tunnels.{ctr}.txt.bz2")
-    while os.path.exists(outpath):
-        ctr += 1
-        outpath = os.path.join(args.outdir, f"found_tunnels.{ctr}.txt.bz2")
-    with bz2.open(outpath, "wt") as out:
-        for trace in traces:
-            if trace is not None:
-                out.write(str(t))
-    logger.info(f"Tunnels written to {outpath}")
+    logger.debug("Done checking for uturn, writing annotated traces to stdout")
+    # outpath = os.path.join(args.outdir, f"found_tunnels.{ctr}.txt.bz2")
+    # while os.path.exists(outpath):
+    #     ctr += 1
+    #     outpath = os.path.join(args.outdir, f"found_tunnels.{ctr}.txt.bz2")    
+    for trace in traces:
+        if trace is not None:
+            print(str(trace))
+    # logger.info(f"Tunnels written to {outpath}")
 
     return 0
 
